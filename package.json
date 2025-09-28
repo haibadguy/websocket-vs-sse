@@ -1,17 +1,25 @@
 {
-  "name": "speedtester",
+  "name": "websocket-vs-sse",
   "version": "1.0.0",
-  "description": "Test WebSocket vs SSE latancy",
-  "main": "index.js",
-  "author": "Simon Niedermayr",
-  "license": "MIT",
+  "description": "",
+  "main": "server.js",
   "scripts": {
-    "start": "node index.js"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/KeKsBoTer/websocket-vs-sse.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/KeKsBoTer/websocket-vs-sse/issues"
+  },
+  "homepage": "https://github.com/KeKsBoTer/websocket-vs-sse#readme",
   "dependencies": {
-    "express": "^4.16.4",
-    "express-ws": "^4.0.0",
-    "sse": "^0.0.8",
-    "sse-express": "^1.0.2"
+    "express": "^5.1.0",
+    "ws": "^8.18.3"
   }
 }
