@@ -94,6 +94,30 @@
     let sseMetrics = { messages: 0, latencies: [], connected: false };
     let wsMetrics = { messages: 0, latencies: [], connected: false };
     
+    // Configuration
+    const MAX_LATENCY_SAMPLES = 100; // Prevent memory leak by limiting array size
+    let wsReconnectAttempts = 0;
+    const MAX_RECONNECT_ATTEMPTS = 5;
+    const RECONNECT_DELAY = 2000;
+    
+    // Helper function to manage latency arrays size
+    function addLatency(metricsObj, latency) {
+      metricsObj.latencies.push(latency);
+      if (metricsObj.latencies.length > MAX_LATENCY_SAMPLES) {
+        metricsObj.latencies.shift(); // Remove oldest sample
+      }
+    }
+    
+    // Helper function for safe JSON parsing
+    function safeJsonParse(jsonString) {
+      try {
+        return JSON.parse(jsonString);
+      } catch (error) {
+        console.error('JSON parsing error:', error);
+        return null;
+      }
+    }
+    
     // SSE Connection
     const eventSource = new EventSource('/sse');
     
@@ -104,11 +128,13 @@
     };
     
     eventSource.onmessage = event => {
-      const data = JSON.parse(event.data);
+      const data = safeJsonParse(event.data);
+      if (!data) return; // Skip if JSON parsing failed
+      
       const latency = Date.now() - data.ts;
       
       sseMetrics.messages++;
-      sseMetrics.latencies.push(latency);
+      addLatency(sseMetrics, latency);
       
       document.getElementById('sse-messages').textContent = sseMetrics.messages;
       document.getElementById('sse-seq').textContent = data.seq;
@@ -127,48 +153,88 @@
       document.getElementById('sse-status').className = 'status disconnected';
     };
     
-    // WebSocket Connection
-    const ws = new WebSocket(`ws://${window.location.host}/ws`);
+    // WebSocket Connection with reconnection logic
+    let ws;
     
-    ws.onopen = () => {
-      wsMetrics.connected = true;
-      document.getElementById('ws-status').textContent = 'Connected';
-      document.getElementById('ws-status').className = 'status connected';
-    };
+    function connectWebSocket() {
+      ws = new WebSocket(`ws://${window.location.host}/ws`);
+      
+      ws.onopen = () => {
+        wsMetrics.connected = true;
+        wsReconnectAttempts = 0; // Reset reconnect attempts on successful connection
+        document.getElementById('ws-status').textContent = 'Connected';
+        document.getElementById('ws-status').className = 'status connected';
+        console.log('WebSocket connected');
+      };
+      
+      ws.onmessage = event => {
+        const data = safeJsonParse(event.data);
+        if (!data) return; // Skip if JSON parsing failed
+        
+        const latency = Date.now() - data.ts;
+        
+        wsMetrics.messages++;
+        addLatency(wsMetrics, latency);
+        
+        document.getElementById('ws-messages').textContent = wsMetrics.messages;
+        document.getElementById('ws-seq').textContent = data.seq;
+        
+        if (wsMetrics.latencies.length > 0) {
+          const avgLatency = wsMetrics.latencies.reduce((a, b) => a + b, 0) / wsMetrics.latencies.length;
+          document.getElementById('ws-latency').textContent = Math.round(avgLatency) + 'ms';
+        }
+        
+        updateComparison();
+      };
+      
+      ws.onerror = (error) => {
+        console.error('WebSocket error:', error);
+        wsMetrics.connected = false;
+        document.getElementById('ws-status').textContent = 'Error';
+        document.getElementById('ws-status').className = 'status disconnected';
+      };
+      
+      ws.onclose = (event) => {
+        wsMetrics.connected = false;
+        document.getElementById('ws-status').className = 'status disconnected';
+        console.log('WebSocket disconnected:', event.code, event.reason);
+        
+        // Attempt to reconnect if not intentionally closed
+        if (event.code !== 1000 && wsReconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+          wsReconnectAttempts++;
+          document.getElementById('ws-status').textContent = `Reconnecting... (${wsReconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`;
+          setTimeout(() => {
+            console.log(`WebSocket reconnect attempt ${wsReconnectAttempts}`);
+            connectWebSocket();
+          }, RECONNECT_DELAY);
+        } else if (wsReconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+          document.getElementById('ws-status').textContent = 'Failed to reconnect';
+        } else {
+          document.getElementById('ws-status').textContent = 'Disconnected';
+        }
+      };
+    }
     
-    ws.onmessage = event => {
-      const data = JSON.parse(event.data);
-      const latency = Date.now() - data.ts;
-      
-      wsMetrics.messages++;
-      wsMetrics.latencies.push(latency);
-      
-      document.getElementById('ws-messages').textContent = wsMetrics.messages;
-      document.getElementById('ws-seq').textContent = data.seq;
-      
-      if (wsMetrics.latencies.length > 0) {
-        const avgLatency = wsMetrics.latencies.reduce((a, b) => a + b, 0) / wsMetrics.latencies.length;
-        document.getElementById('ws-latency').textContent = Math.round(avgLatency) + 'ms';
-      }
-      
-      updateComparison();
-    };
+    // Initialize WebSocket connection
+    connectWebSocket();
     
-    ws.onerror = () => {
-      wsMetrics.connected = false;
-      document.getElementById('ws-status').textContent = 'Error';
-      document.getElementById('ws-status').className = 'status disconnected';
-    };
-    
-    // Update server stats every 2 seconds
-    setInterval(() => {
+    // Update server stats every 2 seconds with error handling
+    const statsInterval = setInterval(() => {
       fetch('/api/stats')
-        .then(response => response.json())
+        .then(response => {
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
+          return response.json();
+        })
         .then(stats => {
           document.getElementById('server-sse-clients').textContent = stats.sseClients;
           document.getElementById('server-ws-clients').textContent = stats.wsClients;
           document.getElementById('server-messages').textContent = stats.messagesSent;
           document.getElementById('server-uptime').textContent = Math.round(stats.uptime / 1000) + 's';
+        })
+        .catch(error => {
+          console.error('Failed to fetch server stats:', error);
         });
     }, 2000);
     
@@ -185,6 +251,31 @@
           `${faster} is faster by ${Math.round(difference)}ms average latency`;
       }
     }
+    
+    // Cleanup on page unload
+    window.addEventListener('beforeunload', () => {
+      // Close WebSocket connection gracefully
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.close(1000, 'Page unloading');
+      }
+      
+      // Close SSE connection
+      if (eventSource) {
+        eventSource.close();
+      }
+      
+      // Clear intervals
+      clearInterval(statsInterval);
+    });
+    
+    // Handle page visibility changes (e.g., tab switching)
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        console.log('Page hidden, connections may be throttled');
+      } else {
+        console.log('Page visible again');
+      }
+    });
   </script>
 </body>
 </html>
