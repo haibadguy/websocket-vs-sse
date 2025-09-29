@@ -1,190 +1,789 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <title>SSE vs WebSocket Performance Comparison</title>
-  <style>
-    body { font-family: monospace; margin: 20px; background: #f5f5f5; }
-    .container { max-width: 1000px; margin: 0 auto; }
-    .metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin: 20px 0; }
-    .card { background: white; padding: 15px; border: 1px solid #ddd; }
-    .card h3 { margin: 0 0 10px 0; color: #333; }
-    .metric { display: flex; justify-content: space-between; margin: 5px 0; }
-    .status { padding: 2px 6px; border-radius: 3px; font-size: 12px; }
-    .connected { background: #d4edda; color: #155724; }
-    .disconnected { background: #f8d7da; color: #721c24; }
-    .server-stats { background: white; padding: 15px; border: 1px solid #ddd; margin: 20px 0; }
-    .comparison { background: white; padding: 15px; border: 1px solid #ddd; margin: 20px 0; }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SSE vs WebSocket Performance Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --primary: #2c3e50;
+            --secondary: #34495e;
+            --success: #27ae60;
+            --danger: #e74c3c;
+            --warning: #f39c12;
+            --info: #3498db;
+            --light: #ecf0f1;
+            --dark: #2c3e50;
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        
+        .header {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .header h1 {
+            color: var(--primary);
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+        
+        .header p {
+            color: var(--secondary);
+            font-size: 1.2em;
+            opacity: 0.8;
+        }
+        
+        .server-selector {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            margin: 20px 0;
+            flex-wrap: wrap;
+        }
+        
+        .server-btn {
+            padding: 12px 25px;
+            border: none;
+            border-radius: 8px;
+            background: var(--info);
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .server-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+        }
+        
+        .server-btn.active {
+            background: var(--success);
+        }
+        
+        .dashboard {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 25px;
+            margin-bottom: 30px;
+        }
+        
+        @media (max-width: 768px) {
+            .dashboard {
+                grid-template-columns: 1fr;
+            }
+        }
+        
+        .card {
+            background: white;
+            padding: 25px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        }
+        
+        .card h3 {
+            color: var(--primary);
+            margin-bottom: 20px;
+            font-size: 1.4em;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+        
+        .metric {
+            background: var(--light);
+            padding: 15px;
+            border-radius: 10px;
+            text-align: center;
+        }
+        
+        .metric-value {
+            font-size: 1.8em;
+            font-weight: bold;
+            color: var(--primary);
+            margin: 5px 0;
+        }
+        
+        .metric-label {
+            font-size: 0.9em;
+            color: var(--secondary);
+            opacity: 0.8;
+        }
+        
+        .status {
+            display: inline-block;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 0.9em;
+            font-weight: bold;
+        }
+        
+        .status.connected { background: var(--success); color: white; }
+        .status.disconnected { background: var(--danger); color: white; }
+        .status.connecting { background: var(--warning); color: white; }
+        
+        .charts-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 25px;
+            margin-bottom: 30px;
+        }
+        
+        .chart-card {
+            background: white;
+            padding: 25px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        }
+        
+        .chart-container {
+            height: 300px;
+            position: relative;
+        }
+        
+        .controls {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            margin: 20px 0;
+            flex-wrap: wrap;
+        }
+        
+        .btn {
+            padding: 12px 25px;
+            border: none;
+            border-radius: 8px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .btn-primary { background: var(--info); color: white; }
+        .btn-success { background: var(--success); color: white; }
+        .btn-danger { background: var(--danger); color: white; }
+        .btn-warning { background: var(--warning); color: white; }
+        
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+        }
+        
+        .comparison {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+        
+        .winner {
+            font-size: 1.5em;
+            font-weight: bold;
+            margin: 15px 0;
+            padding: 15px;
+            border-radius: 10px;
+            background: var(--light);
+        }
+        
+        .latency-history {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-top: 20px;
+        }
+        
+        .latency-item {
+            padding: 10px;
+            background: var(--light);
+            border-radius: 8px;
+            font-size: 0.9em;
+        }
+    </style>
 </head>
 <body>
-  <div class="container">
-    <h1>SSE vs WebSocket Performance Comparison</h1>
-    
-    <div class="metrics">
-      <div class="card">
-        <h3>Server-Sent Events</h3>
-        <div class="metric">
-          <span>Status:</span>
-          <span id="sse-status" class="status disconnected">Disconnected</span>
+    <div class="container">
+        <div class="header">
+            <h1>📊 SSE vs WebSocket Performance Dashboard</h1>
+            <p>Real-time comparison of server-sent events and WebSocket protocols</p>
+            
+            <div class="server-selector">
+                <button class="server-btn" onclick="switchServer(3000, 'Node.js')">Node.js Server</button>
+                <button class="server-btn" onclick="switchServer(8000, 'FastAPI')">FastAPI Server</button>
+                <button class="server-btn" onclick="switchServer(5000, 'Flask')">Flask Server</button>
+            </div>
         </div>
-        <div class="metric">
-          <span>Messages:</span>
-          <span id="sse-messages">0</span>
-        </div>
-        <div class="metric">
-          <span>Avg Latency:</span>
-          <span id="sse-latency">0ms</span>
-        </div>
-        <div class="metric">
-          <span>Last Seq:</span>
-          <span id="sse-seq">-</span>
-        </div>
-      </div>
-      
-      <div class="card">
-        <h3>WebSocket</h3>
-        <div class="metric">
-          <span>Status:</span>
-          <span id="ws-status" class="status disconnected">Disconnected</span>
-        </div>
-        <div class="metric">
-          <span>Messages:</span>
-          <span id="ws-messages">0</span>
-        </div>
-        <div class="metric">
-          <span>Avg Latency:</span>
-          <span id="ws-latency">0ms</span>
-        </div>
-        <div class="metric">
-          <span>Last Seq:</span>
-          <span id="ws-seq">-</span>
-        </div>
-      </div>
-    </div>
-    
-    <div class="server-stats">
-      <h3>Server Statistics</h3>
-      <div class="metric">
-        <span>SSE Clients:</span>
-        <span id="server-sse-clients">0</span>
-      </div>
-      <div class="metric">
-        <span>WS Clients:</span>
-        <span id="server-ws-clients">0</span>
-      </div>
-      <div class="metric">
-        <span>Total Messages:</span>
-        <span id="server-messages">0</span>
-      </div>
-      <div class="metric">
-        <span>Uptime:</span>
-        <span id="server-uptime">0s</span>
-      </div>
-    </div>
-    
-    <div class="comparison">
-      <h3>Performance Analysis</h3>
-      <div id="performance-summary">Connecting...</div>
-    </div>
-  </div>
 
-  <script>
-    // Client state
-    let sseMetrics = { messages: 0, latencies: [], connected: false };
-    let wsMetrics = { messages: 0, latencies: [], connected: false };
-    
-    // SSE Connection
-    const eventSource = new EventSource('/sse');
-    
-    eventSource.onopen = () => {
-      sseMetrics.connected = true;
-      document.getElementById('sse-status').textContent = 'Connected';
-      document.getElementById('sse-status').className = 'status connected';
-    };
-    
-    eventSource.onmessage = event => {
-      const data = JSON.parse(event.data);
-      const latency = Date.now() - data.ts;
-      
-      sseMetrics.messages++;
-      sseMetrics.latencies.push(latency);
-      
-      document.getElementById('sse-messages').textContent = sseMetrics.messages;
-      document.getElementById('sse-seq').textContent = data.seq;
-      
-      if (sseMetrics.latencies.length > 0) {
-        const avgLatency = sseMetrics.latencies.reduce((a, b) => a + b, 0) / sseMetrics.latencies.length;
-        document.getElementById('sse-latency').textContent = Math.round(avgLatency) + 'ms';
-      }
-      
-      updateComparison();
-    };
-    
-    eventSource.onerror = () => {
-      sseMetrics.connected = false;
-      document.getElementById('sse-status').textContent = 'Error';
-      document.getElementById('sse-status').className = 'status disconnected';
-    };
-    
-    // WebSocket Connection
-    const ws = new WebSocket(`ws://${window.location.host}/ws`);
-    
-    ws.onopen = () => {
-      wsMetrics.connected = true;
-      document.getElementById('ws-status').textContent = 'Connected';
-      document.getElementById('ws-status').className = 'status connected';
-    };
-    
-    ws.onmessage = event => {
-      const data = JSON.parse(event.data);
-      const latency = Date.now() - data.ts;
-      
-      wsMetrics.messages++;
-      wsMetrics.latencies.push(latency);
-      
-      document.getElementById('ws-messages').textContent = wsMetrics.messages;
-      document.getElementById('ws-seq').textContent = data.seq;
-      
-      if (wsMetrics.latencies.length > 0) {
-        const avgLatency = wsMetrics.latencies.reduce((a, b) => a + b, 0) / wsMetrics.latencies.length;
-        document.getElementById('ws-latency').textContent = Math.round(avgLatency) + 'ms';
-      }
-      
-      updateComparison();
-    };
-    
-    ws.onerror = () => {
-      wsMetrics.connected = false;
-      document.getElementById('ws-status').textContent = 'Error';
-      document.getElementById('ws-status').className = 'status disconnected';
-    };
-    
-    // Update server stats every 2 seconds
-    setInterval(() => {
-      fetch('/api/stats')
-        .then(response => response.json())
-        .then(stats => {
-          document.getElementById('server-sse-clients').textContent = stats.sseClients;
-          document.getElementById('server-ws-clients').textContent = stats.wsClients;
-          document.getElementById('server-messages').textContent = stats.messagesSent;
-          document.getElementById('server-uptime').textContent = Math.round(stats.uptime / 1000) + 's';
+        <div class="dashboard">
+            <div class="card">
+                <h3>📡 Server-Sent Events (SSE)</h3>
+                <div class="metrics-grid">
+                    <div class="metric">
+                        <div class="metric-label">Status</div>
+                        <div id="sse-status" class="status disconnected">Disconnected</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-label">Messages</div>
+                        <div id="sse-messages" class="metric-value">0</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-label">Avg Latency</div>
+                        <div id="sse-latency" class="metric-value">0ms</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-label">Last Sequence</div>
+                        <div id="sse-seq" class="metric-value">-</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>⚡ WebSocket</h3>
+                <div class="metrics-grid">
+                    <div class="metric">
+                        <div class="metric-label">Status</div>
+                        <div id="ws-status" class="status disconnected">Disconnected</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-label">Messages</div>
+                        <div id="ws-messages" class="metric-value">0</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-label">Avg Latency</div>
+                        <div id="ws-latency" class="metric-value">0ms</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-label">Last Sequence</div>
+                        <div id="ws-seq" class="metric-value">-</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="charts-container">
+            <div class="chart-card">
+                <h3>📈 Latency Over Time</h3>
+                <div class="chart-container">
+                    <canvas id="latencyChart"></canvas>
+                </div>
+            </div>
+            <div class="chart-card">
+                <h3>📊 Message Throughput</h3>
+                <div class="chart-container">
+                    <canvas id="throughputChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <div class="controls">
+            <button class="btn btn-success" onclick="startAll()">▶ Start All Connections</button>
+            <button class="btn btn-danger" onclick="stopAll()">⏹ Stop All Connections</button>
+            <button class="btn btn-warning" onclick="resetMetrics()">🔄 Reset Metrics</button>
+            <button class="btn btn-primary" onclick="exportData()">📥 Export Data</button>
+        </div>
+
+        <div class="card">
+            <h3>🌐 Network Simulation</h3>
+            <div class="controls">
+                <button id="offlineBtn" class="btn btn-warning" onclick="toggleOffline()">📵 Toggle Offline</button>
+                <button class="btn btn-primary" onclick="setLatency(10, 35)">⚡ Fast (10-35ms)</button>
+                <button class="btn btn-primary" onclick="setLatency(50, 150)">🐌 Slow (50-150ms)</button>
+                <button class="btn btn-primary" onclick="setLatency(200, 500)">🐢 Very Slow (200-500ms)</button>
+            </div>
+            <div id="networkStatus" style="margin-top: 10px; font-weight: bold;">
+                Network: Online, Latency: 10-50ms
+            </div>
+        </div>
+
+        <div class="comparison">
+            <h3>🏆 Performance Comparison</h3>
+            <div id="performance-summary" class="winner">
+                Connect to servers to see performance comparison...
+            </div>
+            <div class="latency-history">
+                <div class="latency-item">
+                    <strong>SSE Latest Latencies:</strong>
+                    <div id="sse-latency-history"></div>
+                </div>
+                <div class="latency-item">
+                    <strong>WebSocket Latest Latencies:</strong>
+                    <div id="ws-latency-history"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Configuration
+        let config = {
+            currentServer: { port: 3000, name: 'Node.js' },
+            maxHistory: 50
+        };
+
+        // Client state
+        let sseMetrics = { 
+            messages: 0, 
+            latencies: [],
+            history: [],
+            connected: false,
+            eventSource: null
+        };
+        
+        let wsMetrics = { 
+            messages: 0, 
+            latencies: [],
+            history: [],
+            connected: false, 
+            websocket: null
+        };
+
+        // Chart instances
+        let latencyChart, throughputChart;
+
+        // Initialize charts
+        function initializeCharts() {
+            const latencyCtx = document.getElementById('latencyChart').getContext('2d');
+            const throughputCtx = document.getElementById('throughputChart').getContext('2d');
+
+            latencyChart = new Chart(latencyCtx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [
+                        {
+                            label: 'SSE Latency',
+                            data: [],
+                            borderColor: '#3498db',
+                            backgroundColor: 'rgba(52, 152, 219, 0.1)',
+                            tension: 0.4,
+                            fill: true
+                        },
+                        {
+                            label: 'WebSocket Latency',
+                            data: [],
+                            borderColor: '#e74c3c',
+                            backgroundColor: 'rgba(231, 76, 60, 0.1)',
+                            tension: 0.4,
+                            fill: true
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: { display: true, text: 'Latency (ms)' }
+                        }
+                    }
+                }
+            });
+
+            throughputChart = new Chart(throughputCtx, {
+                type: 'bar',
+                data: {
+                    labels: ['SSE', 'WebSocket'],
+                    datasets: [{
+                        label: 'Messages per Second',
+                        data: [0, 0],
+                        backgroundColor: ['#3498db', '#e74c3c']
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+        }
+
+        // Server switching
+        function switchServer(port, name) {
+            stopAll();
+            config.currentServer = { port, name };
+            document.querySelectorAll('.server-btn').forEach(btn => btn.classList.remove('active'));
+            event.target.classList.add('active');
+            
+            setTimeout(() => {
+                startAll();
+                updateServerInfo();
+            }, 1000);
+        }
+
+        function updateServerInfo() {
+            document.querySelector('.header h1').innerHTML = 
+                `📊 SSE vs WebSocket - ${config.currentServer.name} Server`;
+        }
+
+        // Connection management
+        function connectSSE() {
+            if (sseMetrics.eventSource) {
+                sseMetrics.eventSource.close();
+            }
+
+            const url = `http://${window.location.hostname}:${config.currentServer.port}/sse`;
+            sseMetrics.eventSource = new EventSource(url);
+            
+            sseMetrics.eventSource.onopen = () => {
+                sseMetrics.connected = true;
+                document.getElementById('sse-status').textContent = 'Connected';
+                document.getElementById('sse-status').className = 'status connected';
+                console.log(`✅ SSE connected to ${config.currentServer.name}`);
+            };
+            
+            sseMetrics.eventSource.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    const latency = Date.now() - data.ts;
+                    
+                    processSSEMessage(data, latency);
+                    updateCharts();
+                    updateComparison();
+                } catch (error) {
+                    console.error('SSE parse error:', error);
+                }
+            };
+            
+            sseMetrics.eventSource.onerror = () => {
+                sseMetrics.connected = false;
+                document.getElementById('sse-status').textContent = 'Error';
+                document.getElementById('sse-status').className = 'status disconnected';
+                
+                setTimeout(() => {
+                    if (!sseMetrics.connected) {
+                        console.log('🔄 SSE reconnecting...');
+                        connectSSE();
+                    }
+                }, 3000);
+            };
+        }
+
+        function connectWebSocket() {
+            if (wsMetrics.websocket) {
+                wsMetrics.websocket.close();
+            }
+
+            try {
+                const url = `ws://${window.location.hostname}:${config.currentServer.port}/ws`;
+                wsMetrics.websocket = new WebSocket(url);
+                
+                wsMetrics.websocket.onopen = () => {
+                    wsMetrics.connected = true;
+                    document.getElementById('ws-status').textContent = 'Connected';
+                    document.getElementById('ws-status').className = 'status connected';
+                    console.log(`✅ WebSocket connected to ${config.currentServer.name}`);
+                };
+                
+                wsMetrics.websocket.onmessage = (event) => {
+                    try {
+                        const data = JSON.parse(event.data);
+                        const latency = Date.now() - data.ts;
+                        
+                        processWSMessage(data, latency);
+                        updateCharts();
+                        updateComparison();
+                    } catch (error) {
+                        console.error('WebSocket parse error:', error);
+                    }
+                };
+                
+                wsMetrics.websocket.onclose = () => {
+                    wsMetrics.connected = false;
+                    document.getElementById('ws-status').textContent = 'Disconnected';
+                    document.getElementById('ws-status').className = 'status disconnected';
+                    
+                    setTimeout(() => {
+                        if (!wsMetrics.connected) {
+                            console.log('🔄 WebSocket reconnecting...');
+                            connectWebSocket();
+                        }
+                    }, 3000);
+                };
+                
+                wsMetrics.websocket.onerror = (error) => {
+                    console.log('WebSocket error:', error);
+                    wsMetrics.connected = false;
+                    document.getElementById('ws-status').textContent = 'Error';
+                    document.getElementById('ws-status').className = 'status disconnected';
+                };
+            } catch (error) {
+                console.error('WebSocket connection error:', error);
+            }
+        }
+
+        function processSSEMessage(data, latency) {
+            // Validate latency
+            if (latency < 0 || latency > 10000) {
+                console.warn('⚠️ Invalid SSE latency:', latency, 'Data:', data);
+                return;
+            }
+            
+            console.log('🔍 SSE DEBUG - Server TS:', data.ts, 'Client TS:', Date.now(), 'Latency:', latency + 'ms');
+            
+            sseMetrics.messages++;
+            sseMetrics.latencies.push(latency);
+            sseMetrics.history.push({ time: Date.now(), latency, sequence: data.seq });
+            
+            if (sseMetrics.latencies.length > config.maxHistory) {
+                sseMetrics.latencies.shift();
+                sseMetrics.history.shift();
+            }
+            
+            updateSSEDisplay(data);
+        }
+
+        function processWSMessage(data, latency) {
+            // Validate latency
+            if (latency < 0 || latency > 10000) {
+                console.warn('⚠️ Invalid WS latency:', latency, 'Data:', data);
+                return;
+            }
+            
+            console.log('🔍 WS DEBUG - Server TS:', data.ts, 'Client TS:', Date.now(), 'Latency:', latency + 'ms');
+            
+            wsMetrics.messages++;
+            wsMetrics.latencies.push(latency);
+            wsMetrics.history.push({ time: Date.now(), latency, sequence: data.seq });
+            
+            if (wsMetrics.latencies.length > config.maxHistory) {
+                wsMetrics.latencies.shift();
+                wsMetrics.history.shift();
+            }
+            
+            updateWSDisplay(data);
+        }
+
+        function updateSSEDisplay(data) {
+            document.getElementById('sse-messages').textContent = sseMetrics.messages;
+            document.getElementById('sse-seq').textContent = data.seq;
+            
+            if (sseMetrics.latencies.length > 0) {
+                const avgLatency = sseMetrics.latencies.reduce((a, b) => a + b, 0) / sseMetrics.latencies.length;
+                document.getElementById('sse-latency').textContent = Math.round(avgLatency) + 'ms';
+            }
+            
+            updateLatencyHistory();
+        }
+
+        function updateWSDisplay(data) {
+            document.getElementById('ws-messages').textContent = wsMetrics.messages;
+            document.getElementById('ws-seq').textContent = data.seq;
+            
+            if (wsMetrics.latencies.length > 0) {
+                const avgLatency = wsMetrics.latencies.reduce((a, b) => a + b, 0) / wsMetrics.latencies.length;
+                document.getElementById('ws-latency').textContent = Math.round(avgLatency) + 'ms';
+            }
+            
+            updateLatencyHistory();
+        }
+
+        function updateCharts() {
+            // Update latency chart
+            const timeLabels = Array.from({ length: Math.max(sseMetrics.history.length, wsMetrics.history.length) }, (_, i) => i + 1);
+            
+            latencyChart.data.labels = timeLabels;
+            latencyChart.data.datasets[0].data = sseMetrics.history.map(h => h.latency);
+            latencyChart.data.datasets[1].data = wsMetrics.history.map(h => h.latency);
+            latencyChart.update();
+            
+            // Update throughput chart
+            const sseThroughput = sseMetrics.history.filter(h => Date.now() - h.time < 1000).length;
+            const wsThroughput = wsMetrics.history.filter(h => Date.now() - h.time < 1000).length;
+            
+            throughputChart.data.datasets[0].data = [sseThroughput, wsThroughput];
+            throughputChart.update();
+        }
+
+        function updateLatencyHistory() {
+            const sseLatest = sseMetrics.latencies.slice(-5).reverse();
+            const wsLatest = wsMetrics.latencies.slice(-5).reverse();
+            
+            document.getElementById('sse-latency-history').innerHTML = 
+                sseLatest.map(l => `${Math.round(l)}ms`).join(' • ');
+            document.getElementById('ws-latency-history').innerHTML = 
+                wsLatest.map(l => `${Math.round(l)}ms`).join(' • ');
+        }
+
+        function updateComparison() {
+            if (sseMetrics.latencies.length > 5 && wsMetrics.latencies.length > 5) {
+                const sseAvg = sseMetrics.latencies.reduce((a, b) => a + b, 0) / sseMetrics.latencies.length;
+                const wsAvg = wsMetrics.latencies.reduce((a, b) => a + b, 0) / wsMetrics.latencies.length;
+                
+                const faster = sseAvg < wsAvg ? 'SSE' : 'WebSocket';
+                const difference = Math.abs(sseAvg - wsAvg);
+                const percentage = ((difference / Math.max(sseAvg, wsAvg)) * 100).toFixed(1);
+                
+                const summary = `
+                    <div style="color: ${faster === 'SSE' ? '#3498db' : '#e74c3c'};">
+                        🏆 ${faster} is faster by ${Math.round(difference)}ms (${percentage}%)
+                    </div>
+                    <div style="margin-top: 10px; font-size: 0.9em;">
+                        SSE: ${Math.round(sseAvg)}ms | WebSocket: ${Math.round(wsAvg)}ms
+                    </div>
+                `;
+                
+                document.getElementById('performance-summary').innerHTML = summary;
+            }
+        }
+
+        // Control functions
+        function startAll() {
+            connectSSE();
+            connectWebSocket();
+        }
+
+        function stopAll() {
+            if (sseMetrics.eventSource) {
+                sseMetrics.eventSource.close();
+                sseMetrics.connected = false;
+                document.getElementById('sse-status').textContent = 'Stopped';
+                document.getElementById('sse-status').className = 'status disconnected';
+            }
+            
+            if (wsMetrics.websocket) {
+                wsMetrics.websocket.close();
+                wsMetrics.connected = false;
+                document.getElementById('ws-status').textContent = 'Stopped';
+                document.getElementById('ws-status').className = 'status disconnected';
+            }
+        }
+
+        function resetMetrics() {
+            sseMetrics = { messages: 0, latencies: [], history: [], connected: sseMetrics.connected, eventSource: sseMetrics.eventSource };
+            wsMetrics = { messages: 0, latencies: [], history: [], connected: wsMetrics.connected, websocket: wsMetrics.websocket };
+            
+            document.getElementById('sse-messages').textContent = '0';
+            document.getElementById('sse-latency').textContent = '0ms';
+            document.getElementById('sse-seq').textContent = '-';
+            
+            document.getElementById('ws-messages').textContent = '0';
+            document.getElementById('ws-latency').textContent = '0ms';
+            document.getElementById('ws-seq').textContent = '-';
+            
+            document.getElementById('performance-summary').innerHTML = 'Metrics reset. Connect to servers to see performance comparison...';
+            
+            updateCharts();
+        }
+
+        function exportData() {
+            const data = {
+                timestamp: new Date().toISOString(),
+                server: config.currentServer,
+                sseMetrics,
+                wsMetrics
+            };
+            
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `performance-data-${config.currentServer.name}-${Date.now()}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        // Network simulation controls
+        let isOffline = false;
+
+        async function toggleOffline() {
+            const button = document.getElementById('offlineBtn');
+            isOffline = !isOffline;
+            
+            try {
+                const response = await fetch(`http://${window.location.hostname}:${config.currentServer.port}/network-control`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ offline: isOffline })
+                });
+                
+                if (response.ok) {
+                    button.textContent = isOffline ? '🌐 Go Online' : '📵 Toggle Offline';
+                    button.className = isOffline ? 'btn btn-danger' : 'btn btn-warning';
+                    updateNetworkStatus();
+                    console.log(`🌐 Network simulation: ${isOffline ? 'OFFLINE' : 'ONLINE'}`);
+                }
+            } catch (error) {
+                console.error('Failed to toggle offline mode:', error);
+            }
+        }
+
+        async function setLatency(min, max) {
+            try {
+                const response = await fetch(`http://${window.location.hostname}:${config.currentServer.port}/network-control`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ latencyRange: { min, max } })
+                });
+                
+                if (response.ok) {
+                    updateNetworkStatus();
+                    console.log(`⚡ Latency set to ${min}-${max}ms`);
+                }
+            } catch (error) {
+                console.error('Failed to set latency:', error);
+            }
+        }
+
+        async function updateNetworkStatus() {
+            try {
+                const response = await fetch(`http://${window.location.hostname}:${config.currentServer.port}/network-status`);
+                if (response.ok) {
+                    const status = await response.json();
+                    const statusElement = document.getElementById('networkStatus');
+                    
+                    if (status.offline) {
+                        statusElement.innerHTML = '🔴 Network: <strong>OFFLINE</strong> - All connections simulated as dropped';
+                        statusElement.style.color = '#e74c3c';
+                    } else {
+                        statusElement.innerHTML = `🟢 Network: <strong>ONLINE</strong>, Latency: ${status.latencyMin}-${status.latencyMax}ms`;
+                        statusElement.style.color = '#27ae60';
+                    }
+                }
+            } catch (error) {
+                console.error('Failed to get network status:', error);
+            }
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            initializeCharts();
+            updateServerInfo();
+            updateNetworkStatus();
+            setTimeout(startAll, 1000);
         });
-    }, 2000);
-    
-    // Performance comparison
-    function updateComparison() {
-      if (sseMetrics.latencies.length > 0 && wsMetrics.latencies.length > 0) {
-        const sseAvg = sseMetrics.latencies.reduce((a, b) => a + b, 0) / sseMetrics.latencies.length;
-        const wsAvg = wsMetrics.latencies.reduce((a, b) => a + b, 0) / wsMetrics.latencies.length;
-        
-        const faster = sseAvg < wsAvg ? 'SSE' : 'WebSocket';
-        const difference = Math.abs(sseAvg - wsAvg);
-        
-        document.getElementById('performance-summary').innerHTML = 
-          `${faster} is faster by ${Math.round(difference)}ms average latency`;
-      }
-    }
-  </script>
+    </script>
 </body>
 </html>
